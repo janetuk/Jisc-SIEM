@@ -13,10 +13,14 @@
 #
 # Then use 
 #    ./jisc_splunk --cmd deploy
+#
 # This will 
 #  * move /opt/splunk to inside /opt/jisc_splunk with a date/time added to name
 #  * copy over /opt/jisc_splunk/splunk|splunkforwarder
 #  * set splunk boot start and start up splunk
+#
+# You can also daisy chain commands. e.g. to install and deploy
+#   ./jisc_splunk --cmd install,deploy
 # 
 # The script will look for a jisc.config file which can hold settings.
 # e.g.
@@ -68,9 +72,13 @@ JISC_CONFIG="jisc.config"
 # set everything up out of the way of /opt/splunk
 WORKING_DIR="/opt/jisc_splunk"
 
+SPLUNK_TYPE_UF="uf"
+SPLUNK_TYPE_HF="hf"
+SPLUNK_TYPE_DS="ds"
+
 # option --output/-o requires 1 argument
-LONGOPTS=force,type:,quiet,push:,cmd:,splunk:,target:
-OPTIONS=ft:qcbp:c:s:
+LONGOPTS=help,force,type:,quiet,push:,cmd:,splunk:,target:
+OPTIONS=hft:qcbp:c:s:
 
 # -regarding ! and PIPESTATUS see above
 # -temporarily store output to be able to check for errors
@@ -86,7 +94,11 @@ fi
 eval set -- "$PARSED"
 
 # These'll get set either via values in $JISC_CONFIG or by command line args
+# The currently installed flavour of splunk
 SPLUNK_TYPE="-"
+# The target flavour of splunk we are after. This would only be needed to install.
+SPLUNK_TARGET_TYPE="-"
+# The user/group to run splunk as. If empty then defaults to splunk:splunk
 SPLUNK_USER=""
 SPLUNK_GROUP=""
 SPLUNK_TARGET_VERSION="9.0.0"
@@ -95,7 +107,9 @@ PRETEND_CURRENT_VERSION=""
 IS_DEPLOYMENT_SERVER_ENABLED="-"
 IS_SYSTEMD="-"
 DISABLE_BACKUPS=0
+SPLUNK_EXE=
 
+help=0
 force=0 
 verbose=1
 push=
@@ -114,6 +128,10 @@ fi
 # now enjoy the options in order and nicely split until we see --
 while true; do
     case "$1" in
+        -h|--help)
+            help=1
+            shift
+            ;;
         -f|--force)
             force=1
             shift
@@ -123,7 +141,7 @@ while true; do
             shift                   
             ;;        
         -t|--type)
-            SPLUNK_TYPE="$2"
+            SPLUNK_TARGET_TYPE="$2"
             shift 2
             ;;
             
@@ -177,8 +195,8 @@ command_exists () {
 
 ensure_working_dir_exists() {
  if [ ! -d "$WORKING_DIR" ]; then
-   mkdir $WORKING_DIR
-   chown -R $SPLUNK_USER:$SPLUNK_GROUP $SPLUNK_WORKING_HOME > /dev/null
+   mkdir -p $WORKING_DIR
+   chown -R $SPLUNK_USER:$SPLUNK_GROUP $WORKING_DIR > /dev/null
    log_verbose "file permissions in $SPLUNK_HOME set to $SPLUNK_USER:$SPLUNK_GROUP"  
  fi
 }
@@ -209,20 +227,26 @@ download_splunk() {
             ;;
   esac
   
-  case "$SPLUNK_TYPE" in
-        uf)
+  case "$SPLUNK_TARGET_TYPE" in
+        $SPLUNK_TYPE_UF)
            splunk_product="universalforwarder"
            splunk_download_prefix="splunkforwarder"           
            ;;
-        hf|dp)
+        $SPLUNK_TYPE_HF|$SPLUNK_TYPE_DS)
            splunk_product="splunk"
            splunk_download_prefix="splunk"           
            ;;
         *)
-           log_warn "don't know how to download splunk type '$SPLUNK_TYPE'"
+           log_warn "don't know how to download splunk type '$SPLUNK_TARGET_TYPE'"
            exit 3
            ;;
   esac
+  
+  if [[ -z "$SPLUNK_HOME" ]]; then
+    SPLUNK_HOME="/opt/$splunk_download_prefix"
+    SPLUNK_WORKING_HOME="$WORKING_DIR/$splunk_download_prefix"
+    SPLUNK_EXE="$SPLUNK_HOME/bin/splunk"
+  fi
     
   src="https://download.splunk.com/products/$splunk_product/releases/${SPLUNK_TARGET_VERSION}/linux/$splunk_download_prefix-$SPLUNK_TARGET_VERSION-$splunk_hash-Linux-x86_64.tgz"
   dest="$WORKING_DIR/$splunk_download_prefix-$SPLUNK_TARGET_VERSION-$splunk_hash-Linux-x86_64.tgz"
@@ -241,23 +265,7 @@ download_splunk() {
     #wget -O $WORKING_DIR/splunk-8.1.0-f57c09e87251-Linux-x86_64.tgz "https://download.splunk.com/products/splunk/releases/8.1.0/linux/splunk-8.1.0-f57c09e87251-Linux-x86_64.tgz"
 }
 
-splunk_dir_name() {  
-  local  __resultvar=$1
-  local name=""
-  case "$SPLUNK_TYPE" in
-        uf)
-           name="splunkforwarder"
-           ;;
-        hf)
-           name="splunk"
-           ;;
-        *)
-           echo "SPLUNK_TYPE not defined"
-           exit 3
-           ;;
-  esac
-  eval $__resultvar="$name"
-}
+
 
 create_working_copy() {    
   if [[ $DISABLE_BACKUPS == 0 ]]; then
@@ -292,8 +300,8 @@ create_backup() {
   fi  
 }
 
-unzip_download () {
-  log_info "unziping splunk package '$SPLUNK_TAR_TGZ' into working location $SPLUNK_WORKING_HOME"
+unzip_download () { 
+  log_info "unziping splunk package '$SPLUNK_TAR_TGZ' into working location '$SPLUNK_WORKING_HOME'."
   tar --checkpoint=.1000 -xf $SPLUNK_TAR_TGZ -C $WORKING_DIR
   # The progress dots from the tar will leave the cursor midline. 
   # get onto a new line
@@ -301,13 +309,18 @@ unzip_download () {
 }
 
 copy_files () {
+
+  log_verbose "[$BASH_LINENO] copying from $1"
+  [ -v "$2" ] && echo "cannot copy_files from '$1' - to parameter not defined"  && exit 3
+
   local from_dir=$1
   local to=$2
+    
   # red 8.6 doesn't have rsync
   if [[ $(command_exists "rsync") == "1" ]]; then
     # Use rsync if we have it so users seens some progression    
-    local rsync_args="-a -P"
-    rsync $rsync_args $SPLUNK_HOME/etc/system/local/* $SPLUNK_WORKING_HOME/etc/system/local
+    local rsync_args="-av -P --info=progress2"    
+    rsync $rsync_args $from_dir $to
   else
     # if we can't rsync then just use cp. Won't get nice info while this is happening through
     cp -r $from_dir $to
@@ -351,27 +364,27 @@ copy_existing_confs_apps() {
 
 splunk_set_file_permissions() { 
   if test -d "$SPLUNK_HOME"; then  
-    chown -R $SPLUNK_USER:$SPLUNK_GROUP $SPLUNK_HOME > /dev/null
-    log_verbose "file permissions in $SPLUNK_HOME set to $SPLUNK_USER:$SPLUNK_GROUP"  
+    chown -R $SPLUNK_USER:$SPLUNK_GROUP $SPLUNK_HOME 
+    #log_verbose "file permissions in $SPLUNK_HOME set to $SPLUNK_USER:$SPLUNK_GROUP"  
   fi
   
   if test -d "$SPLUNK_WORKING_HOME"; then  
-    chown -R $SPLUNK_USER:$SPLUNK_GROUP $SPLUNK_WORKING_HOME > /dev/null
-    log_verbose "file permissions in $SPLUNK_HOME set to $SPLUNK_USER:$SPLUNK_GROUP"  
+    chown -R $SPLUNK_USER:$SPLUNK_GROUP $SPLUNK_WORKING_HOME
+    #log_verbose "file permissions in $SPLUNK_HOME set to $SPLUNK_USER:$SPLUNK_GROUP"  
   fi
 }
 
 splunk_status() {  
-  if [[ -d $SPLUNK_HOME ]]; then      
+  if [[ -f $SPLUNK_EXE ]]; then      
       error_code=0
-      $SPLUNK_HOME/bin/splunk status > /dev/null || error_code=$?
+      $SPLUNK_EXE status > /dev/null || error_code=$?
       if [[ "${error_code}" -eq 0 ]]; then
         IS_SPLUNK_RUNNING=1
       else
         IS_SPLUNK_RUNNING=0
       fi          
-  else
-      SPLUNK_STATUS="-1"
+  else      
+      IS_SPLUNK_RUNNING="-1"
       log_verbose "splunk not installed in $SPLUNK_HOME"      
   fi
 }
@@ -383,7 +396,7 @@ splunk_stop() {
       splunk_status
       if [[ $IS_SPLUNK_RUNNING == 1 ]]; then
         log_verbose "stopping splunk"
-        $SPLUNK_HOME/bin/splunk stop $SPLUNK_ARGS
+        $SPLUNK_EXE stop $SPLUNK_ARGS
       else
         log_verbose "splunk already stopped"      
       fi
@@ -396,7 +409,7 @@ splunk_start() {
       if [[ $IS_SPLUNK_RUNNING == 0 ]]; then      
         splunk_set_file_permissions      
         log_verbose "starting splunk"
-        $SPLUNK_HOME/bin/splunk start $SPLUNK_ARGS
+        $SPLUNK_EXE start $SPLUNK_ARGS
       else
         log_verbose "splunk already running"
       fi
@@ -409,7 +422,7 @@ splunk_restart() {
       if [[ $IS_SPLUNK_RUNNING == 1 ]]; then      
         splunk_set_file_permissions      
         log_verbose "starting splunk"
-        $SPLUNK_HOME/bin/splunk restart $SPLUNK_ARGS
+        $SPLUNK_EXE restart $SPLUNK_ARGS
       else
         log_verbose "splunk is not currently running. no need to restart"
       fi
@@ -439,47 +452,154 @@ splunk_enable_boot_start() {
     splunk_set_file_permissions
     if [[ $IS_SYSTEMD == 1  ]]; then    
       log_verbose "setting up splunk for boot start under systemd"
-      $SPLUNK_HOME/bin/splunk enable boot-start $SPLUNK_ARGS -systemd-managed 1 -user $SPLUNK_USER -group $SPLUNK_GROUP
+      $SPLUNK_EXE enable boot-start $SPLUNK_ARGS -systemd-managed 1 -user $SPLUNK_USER -group $SPLUNK_GROUP
     else
       log_verbose "setting up splunk for boot start under initd"
-      $SPLUNK_HOME/bin/splunk enable boot-start $SPLUNK_ARGS -systemd-managed 0 -user $SPLUNK_USER -group $SPLUNK_GROUP      
+      $SPLUNK_EXE enable boot-start $SPLUNK_ARGS -systemd-managed 0 -user $SPLUNK_USER -group $SPLUNK_GROUP      
       # Put the SPLUNK_USER su statements into the init.d file (that splunk recommend, and do in the systemd version but not in the init.d for some reason)
-      sed -i -r -e "s|^(\s+)(\"/opt/splunk/bin/splunk\")|\1su - $SPLUNK_USER -c \2|g" /etc/init.d/splunk
+      sed -i -r -e "s|^(\s+)(\"$SPLUNK_EXE\")|\1su - $SPLUNK_USER -c \2|g" /etc/init.d/splunk
     fi    
     splunk_set_file_permissions
   fi
 }
 
 splunk_disable_boot_start() {  
-  if [[ -d $SPLUNK_HOME ]]; then    
+  if [[ -f $SPLUNK_EXE ]]; then    
     if [[ $IS_SYSTEMD == 1 ]]; then    
       log_verbose "disabling bootstart on systemd"
-      $SPLUNK_HOME/bin/splunk disable boot-start $SPLUNK_ARGS
+      $SPLUNK_EXE disable boot-start $SPLUNK_ARGS
     else
-      $SPLUNK_HOME/bin/splunk disable boot-start $SPLUNK_ARGS
+      $SPLUNK_EXE disable boot-start $SPLUNK_ARGS
     fi    
   fi
 }
 
-splunk_python_enable_https_verify () {
+
+search_replace () {
+  local file=$1
+  local regex=$2    
+  if [[ -f $file ]]; then                  
+        local contents=$(cat $splunk_launch_conf)                    
+        if [[ $contents =~ $regex ]]; then        
+            result=${BASH_REMATCH[1]}     
+            echo $result                        
+        else
+            echo "-"
+        fi  
+  else
+    log_error "file '$file' not found. can't search it"  
+    exit 3
+  fi
+}
+
+splunk_python_disable_https_verify () (
     local splunk_launch_conf="$SPLUNK_HOME/etc/splunk-launch.conf"
-    if [[ -f $splunk_launch_conf ]]; then
-        sed -i ':a;N;$!ba;s/PYTHONHTTPSVERIFY=0/PYTHONHTTPSVERIFY=1/g' $splunk_launch_conf
-    fi
+    local regex="PYTHONHTTPSVERIFY\s*=\s*(\w+)"
+    
+    match () {
+       local x=$1
+       echo "xxx $x"
+       case "$x" in                      
+                "")                  
+                ;;
+                "true"|"1")
+                  sed -i ':a;N;$!ba;s/PYTHONHTTPSVERIFY=1/PYTHONHTTPSVERIFY=0/g' $splunk_launch_conf
+                  splunk_restart
+                  ;;
+                "false"|"0")                  
+                  ;;
+                *)
+                  log_error "don't know how to handle '$x'"
+                  exit 1
+                  ;;
+            esac
+    }
+    
+    local x=$(search_replace $splunk_launch_conf $regex)
+    match $x       
+)
+
+splunk_python_enable_https_verify () (
+    local splunk_launch_conf="$SPLUNK_HOME/etc/splunk-launch.conf"
+    local regex="PYTHONHTTPSVERIFY\s*=\s*(\w+)"
+    
+    match () {
+       local x=$1
+       case "$x" in                      
+                "")
+                  printf "\nPYTHONHTTPSVERIFY=1\n" >> $splunk_launch_conf
+                  splunk_restart          
+                ;;
+                "true"|"1")
+                  # its already 1 nothing to do
+                  ;;
+                "false"|"0")
+                  # switch PYTHONHTTPSVERIFY=0 to PYTHONHTTPSVERIFY=1 if its in the file
+                  sed -i ':a;N;$!ba;s/PYTHONHTTPSVERIFY=0/PYTHONHTTPSVERIFY=1/g' $splunk_launch_conf
+                  splunk_restart
+                  ;;
+                *)
+                  log_error "don't know how to handle '$x'"
+                  exit 1
+                  ;;
+            esac
+    }
+    
+    local x=$(search_replace $splunk_launch_conf $regex)
+    match $x     
+)
+
+splunk_bindip_localhost () (
+    local splunk_launch_conf="$SPLUNK_HOME/etc/splunk-launch.conf"
+    local regex="SPLUNK_BINDIP\s*=\s*(\w+)"
+    
+    match () {       
+       case "$1" in                      
+                "-")
+                  printf "\nSPLUNK_BINDIP=127.0.0.0\n" >> $splunk_launch_conf
+                  splunk_restart          
+                ;;
+                "true"|"1")
+                  # its already 1 nothing to do
+                  ;;
+                "false"|"0")
+                  # switch PYTHONHTTPSVERIFY=0 to PYTHONHTTPSVERIFY=1 if its in the file
+                  sed -i ':a;N;$!ba;s/$regex/127.0.0.0/g' $splunk_launch_conf
+                  splunk_restart
+                  ;;
+                *)
+                  log_error "don't know how to handle '$1'"
+                  exit 1
+                  ;;
+            esac
+    }
+    
+    local x=$(search_replace $splunk_launch_conf $regex)
+    echo $x
+    match $x     
+)
+
+update_splunk_launch () {
+  log_verbose "enabling python https verify"
+  splunk_python_enable_https_verify
+  log_verbose "explicitly setting bindip to localhost"
+  splunk_bindip_localhost
 }
 
 deploy_splunk() { 
+  ensure_splunk_env
+  [[ -z "$SPLUNK_WORKING_HOME" ]] && log_error "\$SPLUNK_WORKING_HOME not set. Noting to deploy" && exit 3
   if [[ -d $SPLUNK_HOME ]]; then
     timestamp=`date +"%FT%T.%3N"`
     dest="$WORKING_DIR/splunk_$timestamp"    
     log_verbose "moving the $SPLUNK_HOME to $dest"   
     mv $SPLUNK_HOME $dest
-    #log_verbose "deleting $SPLUNK_HOME directory (remember we have a copy"   
+    #log_verbose "deleting $SPLUNK_HOME directory (remember we have a copy)"   
     #rm -fr $dest
   fi
-  log_verbose "copying working folder to $SPLUNK_HOME"
-  copy_files $SPLUNK_WORKING_HOME /opt
-  log_verbose "finished setting up working folder to $SPLUNK_HOME"
+  log_verbose "copying working folder '$SPLUNK_WORKING_HOME' to '$SPLUNK_HOME'"
+  copy_files "$SPLUNK_WORKING_HOME" "/opt"
+  log_verbose "finished setting up working folder '$SPLUNK_WORKING_HOME' to '$SPLUNK_HOME'"
 }
 
 splunk_disable_deployment_server() {
@@ -519,27 +639,29 @@ splunk_is_deployment_server_enabled() {
     local serverclass_conf="$SPLUNK_HOME/etc/system/local/serverclass.conf"           
     local result
     local regex='\[global\]\s+disabled\s*=\s*(\w+)'    
-    local contents=$(cat $serverclass_conf)    
-    if [[ $contents =~ $regex ]]
-    then        
-        result=${BASH_REMATCH[1]}                       
-        case "$result" in        
-            "")
-              IS_DEPLOYMENT_SERVER_ENABLED=1
-              ;;
-            "true")
-              IS_DEPLOYMENT_SERVER_ENABLED=0
-              ;;
-            "false")
-              IS_DEPLOYMENT_SERVER_ENABLED=1
-              ;;
-            *)
-              log_error "don't know how to handle '$result'"
-              exit 1
-              ;;
-        esac
-    else        
-        IS_DEPLOYMENT_SERVER_ENABLED=1        
+   
+    if [[ -f $serverclass_conf ]]; then
+        local contents=$(cat $serverclass_conf)    
+        if [[ $contents =~ $regex ]]; then        
+            result=${BASH_REMATCH[1]}                       
+            case "$result" in        
+                "")
+                  IS_DEPLOYMENT_SERVER_ENABLED=1
+                  ;;
+                "true")
+                  IS_DEPLOYMENT_SERVER_ENABLED=0
+                  ;;
+                "false")
+                  IS_DEPLOYMENT_SERVER_ENABLED=1
+                  ;;
+                *)
+                  log_error "don't know how to handle '$result'"
+                  exit 1
+                  ;;
+            esac
+        else        
+            IS_DEPLOYMENT_SERVER_ENABLED=1        
+        fi
     fi
 }
 
@@ -547,9 +669,17 @@ splunk_version() {
   # So we can force the version while testing things
   if [[ ! -z $PRETEND_CURRENT_VERSION ]]; then
     SPLUNK_CURRENT_VERSION=$PRETEND_CURRENT_VERSION
-  else
-      if [[ -d $SPLUNK_HOME ]]; then    
-        SPLUNK_CURRENT_VERSION=$($SPLUNK_HOME/bin/splunk version $SPLUNK_ARGS | grep -Eo '[0-9]+\.[0-9]+\.[0-9]')  
+  else  
+      if [[ -f $SPLUNK_EXE ]]; then    
+        local v=$($SPLUNK_EXE version $SPLUNK_ARGS)    
+        local regex=".*([0-9]+\.[0-9]+\.[0-9]+)"
+        if [[ $v =~ $regex ]]; then
+            SPLUNK_CURRENT_VERSION=${BASH_REMATCH[1]}
+        else
+        echo "couldn't parse the version number out of $v"
+            SPLUNK_CURRENT_VERSION="<none>"
+        fi
+        #SPLUNK_CURRENT_VERSION=$($SPLUNK_EXE version $SPLUNK_ARGS | grep -Eo '[0-9]+\.[0-9]+\.[0-9]')  
       else
         SPLUNK_CURRENT_VERSION="<none>"
       fi
@@ -582,17 +712,17 @@ push_script() {
 migrate_kv_store() {
   # Since we're putting a new version in place could just stick the WireTiger setting into server.conf
   # into the new version at the start instead of migrating?  
-  if [ "$SPLUNK_TYPE" == "uf" ]; then
+  if [ "$SPLUNK_TYPE" == $SPLUNK_TYPE_UF ]; then
      log_warn "Universal forwarder does not make use of kv store. no need to migrate"
   else
     log_verbose "Start migrating kv store"
     log_verbose "stopping splunk"
-    $SPLUNK_HOME/bin/splunk $SPLUNK_ARGS stop
+    $SPLUNK_EXE $SPLUNK_ARGS stop
     echo -e "\n[kvstore]\nstorageEngineMigration=true" >> $SPLUNK_HOME/etc/system/local/server.conf
     log_verbose "starting kv store migration. see $SPLUNK_HOME/var/log/splunk/mongod.log"
-    $SPLUNK_HOME/bin/splunk $SPLUNK_ARGS migrate kvstore-storage-engine --target-engine wiredTiger
-    log_verbose "starting splunk..."
-    $SPLUNK_HOME/bin/splunk $SPLUNK_ARGS start
+    $SPLUNK_EXE $SPLUNK_ARGS migrate kvstore-storage-engine --target-engine wiredTiger
+    log_verbose "starting splunk..."    
+    $SPLUNK_EXE $SPLUNK_ARGS start
   fi
 }
 
@@ -615,7 +745,7 @@ confirm () {
 upgrade_to_826 () 
 {
     SPLUNK_TARGET_VERSION="8.2.6"
-    download_splunk $SPLUNK_TYPE $SPLUNK_TARGET_VERSION
+    download_splunk $SPLUNK_TARGET_TYPE $SPLUNK_TARGET_VERSION
     
     if test -d "$SPLUNK_WORKING_HOME"; then
         log_verbose "deleting existing working folder $SPLUNK_WORKING_HOME"
@@ -631,22 +761,61 @@ upgrade_to_826 ()
 upgrade_to_900 () 
 {
     SPLUNK_TARGET_VERSION="9.0.0"
-    download_splunk $SPLUNK_TYPE $SPLUNK_TARGET_VERSION
+    download_splunk $SPLUNK_TARGET_TYPE $SPLUNK_TARGET_VERSION
     create_working_copy    
     # unpack everything on top
     unzip_download    
     splunk_set_file_permissions
 }
 
-find_splunk_installed_type () {
-    if [ "$SPLUNK_TYPE" == "-" ]; then
-      if test -d "/opt/splunk"; then
-        SPLUNK_TYPE=hf
-      fi
-      if test -d "/opt/splunkforwarder"; then
-        SPLUNK_TYPE=uf
-      fi
+setup_splunk_env () {
+
+    SPLUNK_HOME=
+    SPLUNK_EXE=
+    SPLUNK_WORKING_HOME=
+    
+    if test -d "/opt/splunk"; then
+        SPLUNK_TYPE=$SPLUNK_TYPE_HF
+        SPLUNK_HOME="/opt/splunk"
+        SPLUNK_WORKING_HOME="$WORKING_DIR/splunk"        
     fi
+    if test -d "/opt/splunkforwarder"; then
+        SPLUNK_TYPE=$SPLUNK_TYPE_UF
+        SPLUNK_HOME="/opt/splunkforwarder"
+        SPLUNK_WORKING_HOME="$WORKING_DIR/splunkforwarder"
+    fi
+    
+    if [[ ! -z "$SPLUNK_HOME" ]]; then
+        if [[ -f "$SPLUNK_HOME/etc/system/local/serverclass.conf" ]]; then
+            SPLUNK_TYPE=$SPLUNK_TYPE_DS
+        fi           
+        
+        SPLUNK_EXE="$SPLUNK_HOME/bin/splunk"
+    fi     
+}
+
+ensure_splunk_env () {
+
+  if [[ -z "$SPLUNK_HOME" ]]; then
+    case "$SPLUNK_TARGET_TYPE" in
+        $SPLUNK_TYPE_UF)
+           splunk_product="universalforwarder"
+           splunk_download_prefix="splunkforwarder"           
+           ;;
+        $SPLUNK_TYPE_HF|$SPLUNK_TYPE_DS)
+           splunk_product="splunk"
+           splunk_download_prefix="splunk"           
+           ;;
+        *)
+           log_warn "don't know how to download splunk type '$SPLUNK_TARGET_TYPE'"
+           exit 3
+           ;;
+    esac
+  
+    SPLUNK_HOME="/opt/$splunk_download_prefix"
+    SPLUNK_WORKING_HOME="$WORKING_DIR/$splunk_download_prefix"
+    SPLUNK_EXE="$SPLUNK_HOME/bin/splunk"
+  fi
 }
 
 system_info () {
@@ -674,6 +843,35 @@ system_info () {
   
   echo "-- end system info ---"
 }
+
+show_help () {
+  echo "A script to simplify routine maintence of Jisc configured splunk infrastructure."
+  echo "The script is intended to be agnostic for the splunk type installed (Heavy or Universal forwarder) so the same commands should have the same"
+  echo "effect on either type. The script is also agnostic of linux flavour and systemd or initd."
+  echo
+  echo "Splunk operations"
+  echo "e.g jisc_splunk --splunk start"
+  echo "--splunk {cmd}[,{cmd}]"
+  echo 
+  echo "start                        Start splunk if it isn't ready running"
+  echo "restart                      Restarts splunk if splunk is currently running. But it splunk is currently not running then does nothing"
+  echo "stop                         Stops splunk if it is currently running"
+  echo "version                      Shows the version of splunk currently installed"
+  echo "permissions                  Sets/updates the file permissions on      SPLUNK_HOME"
+  echo "tail                         Runs a tail command on splunkd.log"
+  echo "status                       Outputs splunk status"
+  echo "migrate_kv_store             Migrates an old style kv store to splunk's new flavour"
+  echo "enable_boot_start            Enables splunk boot start."
+  echo "disable_boot_start           Disables splunk boot start"
+  echo "disable_deployment_server    Disables this machine as a deployment server"
+  echo "enable_deployment_server     Enables this machine as a deployment server"
+  echo "python_enable_https_verify   Turns on https verify in splunk-launch.conf"
+  echo
+  echo "The --cmd options "     
+  echo 
+  echo "--push {username@host}     Pushes this script via scp to the home directory of username on machine host."
+}
+
 #############################################################################
 #
 # The real start of the script
@@ -683,13 +881,14 @@ if [[ ! -z $push ]]; then
   exit 0
 fi
 
+if [[ $help == 1 ]]; then
+  show_help
+  exit 0    
+fi
+
 log_verbose "starting.."
 
-find_splunk_installed_type
-
-splunk_dir_name splunk_dir_name
-
-SPLUNK_HOME="/opt/$splunk_dir_name"
+setup_splunk_env
 
 splunk_version
 splunk_status
@@ -697,7 +896,6 @@ check_if_systemd
 splunk_is_deployment_server_enabled
 
 SPLUNK_TAR_TGZ=""
-SPLUNK_WORKING_HOME="$WORKING_DIR/$splunk_dir_name"
 
 [[ -z "$SPLUNK_USER" ]] && SPLUNK_USER=splunk
 [[ -z "$SPLUNK_GROUP" ]] && SPLUNK_GROUP=splunk
@@ -705,6 +903,7 @@ SPLUNK_WORKING_HOME="$WORKING_DIR/$splunk_dir_name"
 log_info "WORKING_DIR: $WORKING_DIR"
 log_info "SPLUNK_CURRENT_VERSION: $SPLUNK_CURRENT_VERSION"
 log_info "SPLUNK_TYPE: $SPLUNK_TYPE"
+log_info "SPLUNK_TARGET_TYPE: $SPLUNK_TARGET_TYPE"
 log_info "SPLUNK_TARGET_VERSION: $SPLUNK_TARGET_VERSION"
 log_info "SPLUNK_HOME: $SPLUNK_HOME"
 log_info "SPLUNK_USER: $SPLUNK_USER"
@@ -712,6 +911,7 @@ log_info "SPLUNK_GROUP: $SPLUNK_GROUP"
 log_info "SPLUNK_WORKING_HOME: $SPLUNK_WORKING_HOME"
 log_info "IS_SYSTEMD: $IS_SYSTEMD"
 log_info "IS_DEPLOYMENT_SERVER_ENABLED: $IS_DEPLOYMENT_SERVER_ENABLED"
+log_info "---"
 
 [[ $DISABLE_BACKUPS == 1 ]] && log_warn "the creation backups has been disabled."
 
@@ -732,159 +932,180 @@ case "$IS_SPLUNK_RUNNING" in
     ;;
 esac
 
-if [[ "$SPLUNK_CURRENT_VERSION" != "9.0.0" ]]; then
-   if [[ "$IS_DEPLOYMENT_SERVER_ENABLED" == "1" ]]; then
-     log_warn "deployment server is enabled and not running splunk 9.0.0. Disabling the deployment server"     
-     splunk_disable_deployment_server
-     # if splunk is currently running then restart, else leave it stopped
-     splunk_restart
-   fi
+if [[ $SPLUNK_TYPE == $SPLUNK_TYPE_DS ]]; then
+    if [[ "$IS_SPLUNK_RUNNING" != "-1" && "$SPLUNK_CURRENT_VERSION" != "9.0.0" ]]; then
+       if [[ "$IS_DEPLOYMENT_SERVER_ENABLED" == "1" ]]; then
+         log_warn "deployment server is enabled and not running splunk 9.0.0. Disabling the deployment server"     
+         splunk_disable_deployment_server
+         # if splunk is currently running then restart, else leave it stopped
+         splunk_restart
+       fi
+    fi
 fi
 
 if [[ ! -z $splunk_cmd ]]; then
-  log_verbose "running splunk cmd '$splunk_cmd'"
-  case "$splunk_cmd" in
-    "start")
-       splunk_start
-       ;;  
-       
-    "restart")
-       splunk_restart
-       ;;  
-       
-    "stop")
-       splunk_stop
-       ;;  
-       
-    "version")
-       splunk_version
-       log_verbose "SPLUNK_CURRENT_VERSION=$SPLUNK_CURRENT_VERSION"
-       ;;  
-       
-    "permissions")       
-       splunk_set_file_permissions      
-       ;;  
-       
-    "tail")       
-       tail_splunkd_log
-       ;;  
-       
-    status)       
-       splunk_status
-       log_verbose "splunk running status $IS_SPLUNK_RUNNING"
-       ;;  
-       
-    "migrate_kv_store")
-        migrate_kv_store $SPLUNK_HOME
-        ;;
-        
-    "enable_boot_start")
-       splunk_enable_boot_start
-       ;;  
-       
-    "disable_boot_start")
-       splunk_disable_boot_start
-       splunk_start
-       ;;
-       
-    "disable_deployment_server")
-       splunk_disable_deployment_server
-       log_info "IS_DEPLOYMENT_SERVER_ENABLED: $IS_DEPLOYMENT_SERVER_ENABLED"
-       ;;
-       
-    "enable_deployment_server")
-       splunk_enable_deployment_server
-       log_info "IS_DEPLOYMENT_SERVER_ENABLED: $IS_DEPLOYMENT_SERVER_ENABLED"
-       ;;
-       
-    "python_enable_https_verify")
-       splunk_python_enable_https_verify
-       ;;
-       
-    *)
-       log_warn "don't know splunkcmd '$splunk_cmd'"
-       exit 3
-       ;;
-  esac
+
+  for i in ${splunk_cmd//,/ }
+    do
+      #log_verbose "running splunk cmd '$i'"
+      case "$i" in
+        "start")
+           splunk_start
+           ;;  
+           
+        "restart")
+           splunk_restart
+           ;;  
+           
+        "stop")
+           splunk_stop
+           ;;  
+           
+        "version")
+           splunk_version
+           log_verbose "SPLUNK_CURRENT_VERSION=$SPLUNK_CURRENT_VERSION"
+           ;;  
+           
+        "permissions")       
+           splunk_set_file_permissions      
+           ;;  
+           
+        "tail")       
+           tail_splunkd_log
+           ;;  
+           
+        "status")       
+           splunk_status
+           log_info "splunk running status $IS_SPLUNK_RUNNING"
+           ;;  
+           
+        "migrate_kv_store")
+            migrate_kv_store $SPLUNK_HOME
+            ;;
+            
+        "enable_boot_start")
+           splunk_enable_boot_start
+           ;;  
+           
+        "disable_boot_start")
+           splunk_disable_boot_start
+           splunk_start
+           ;;
+           
+        "disable_deployment_server")
+           splunk_disable_deployment_server
+           log_info "IS_DEPLOYMENT_SERVER_ENABLED: $IS_DEPLOYMENT_SERVER_ENABLED"
+           ;;
+           
+        "enable_deployment_server")
+           splunk_enable_deployment_server
+           log_info "IS_DEPLOYMENT_SERVER_ENABLED: $IS_DEPLOYMENT_SERVER_ENABLED"
+           ;;
+
+        "python_enable_https_verify")
+           splunk_python_enable_https_verify
+           ;;
+                   
+        "update_splunk_launch")
+           update_splunk_launch
+           ;;
+           
+        *)
+           log_warn "don't know splunkcmd '$splunk_cmd'"
+           exit 3
+           ;;
+      esac
+  done
   log_verbose "done"
   exit 0
 fi
 
 if [[ ! -z $cmd ]]; then
-  case "$cmd" in
-    "info")
-       system_info
-       ;;
-       
-    "backup")
-       create_backup  
-       ;;  
-       
-    "download")
-       download_splunk
-       ;;  
 
-    "install")        
-       download_splunk
-       unzip_download       
-       copy_existing_confs_apps
-       create_backup
-       log_verbose "run --cmd deploy to put the working package into place and start splunk"
-       ;;
-       
-    "uninstall")        
-       splunk_stop
-       splunk_disable_boot_start
-       rm -fr $SPLUNK_HOME       
-       ;;
-       
-    "unzip") 
-       download_splunk    
-       unzip_download
-       ;;
-       
-    "copy_conf")
-        copy_existing_confs_apps
-        ;;
-       
-    "upgrade")        
-       log_verbose "current splunk version is $SPLUNK_CURRENT_VERSION"    
-       case "$SPLUNK_CURRENT_VERSION" in
-         "$SPLUNK_TARGET_VERSION")
-            log_verbose "already at version $SPLUNK_TARGET_VERSION. nothing to do"
-            ;;            
-         "9.0.0")
-            log_verbose "already at highest version. nothing to do"
+    for i in ${cmd//,/ }
+    do
+      case "$i" in
+        "info")
+           system_info
+           ;;
+           
+        "backup")
+           create_backup  
+           ;;  
+           
+        "download")
+           download_splunk
+           ;;  
+
+        "install")        
+           if [[ -z "$SPLUNK_HOME" ]]; then
+             download_splunk
+             unzip_download       
+             copy_existing_confs_apps
+             create_backup
+             log_verbose "run --cmd deploy to put the working package into place and start splunk"             
+           else
+             log_error "splunk is already installed in $SPLUNK_HOME. Perhaps your mean to do --upgrade rather than --install?"
+           fi
+           ;;
+           
+        "uninstall")        
+           splunk_stop
+           splunk_disable_boot_start
+           rm -fr $SPLUNK_HOME       
+           SPLUNK_HOME=
+           SPLUNK_WORKING_HOME=
+           SPLUNK_EXE=
+           ;;
+           
+        "unzip") 
+           download_splunk    
+           unzip_download
+           ;;
+           
+        "copy_conf")
+            copy_existing_confs_apps
             ;;
-         "8.0.7")
-            log_verbose "upgrading from 8.0.7 ==> $SPLUNK_TARGET_VERSION"
-            upgrade_to_826
-            ;;
-         "8.2.6")
-            # we can do a normal splunk update on this
-            # upzip on top of existing splunk
-            log_verbose "upgrading from 8.2.6 to $SPLUNK_TARGET_VERSION"
-            upgrade_to_900            
-            ;;
-         *)
-            log_error "don't know how to upgrade from $SPLUNK_CURRENT_VERSION"
-            exit 3
-            ;;
-       esac
-       ;;
-       
-    "deploy")
-       deploy_package       
-       ;;
-        
-    "clean")
-       clean
-       ;;
-    *)
-       log_warn "don't know cmd '$cmd'"
-       exit 3
-       ;;
-  esac
+           
+        "upgrade")        
+           log_verbose "current splunk version is $SPLUNK_CURRENT_VERSION"    
+           case "$SPLUNK_CURRENT_VERSION" in
+             "$SPLUNK_TARGET_VERSION")
+                log_verbose "already at version $SPLUNK_TARGET_VERSION. nothing to do"
+                ;;            
+             "9.0.0")
+                log_verbose "already at highest version. nothing to do"
+                ;;
+             "8.0.7")
+                log_verbose "upgrading from 8.0.7 ==> $SPLUNK_TARGET_VERSION"
+                upgrade_to_826
+                ;;
+             "8.2.6")
+                # we can do a normal splunk update on this
+                # upzip on top of existing splunk
+                log_verbose "upgrading from 8.2.6 to $SPLUNK_TARGET_VERSION"
+                upgrade_to_900            
+                ;;
+             *)
+                log_error "don't know how to upgrade from $SPLUNK_CURRENT_VERSION"
+                exit 3
+                ;;
+           esac
+           ;;
+           
+        "deploy")
+           deploy_package       
+           ;;
+            
+        "clean")
+           clean
+           ;;
+        *)
+           log_warn "don't know cmd '$cmd'"
+           exit 3
+           ;;
+      esac
+  done
   exit 0
 fi
 
