@@ -1,0 +1,181 @@
+ArcSight_ArcSight,index,JOID_soc_test_30
+ArcSight_ArcSight,source,ArcSight:ArcSight
+aruba_clearpass,index,JOID_soc_netfw_std
+aruba_clearpass,sourcetype,aruba:clearpass
+avi_vantage,source,avi_vantage
+bluecoat_proxy,index,JOID_soc_netproxy_std
+brocade_syslog,index,JOID_soc_netops_std
+Carbon Black_Protection,index,JOID_soc_epintel_std
+Carbon Black_Protection,source,carbonblack:protection:cef
+checkpoint_splunk_dlp,index,JOID_soc_netdlp_std
+checkpoint_splunk_email,index,JOID_soc_mail_std
+checkpoint_splunk_firewall,index,JOID_soc_netfw_std
+checkpoint_splunk_ids,index,JOID_soc_netids_std
+checkpoint_splunk_os,index,JOID_soc_netops_std
+checkpoint_splunk_sessions,index,JOID_soc_netops_std
+checkpoint_splunk_web,index,JOID_soc_netproxy_std
+checkpoint_splunk,index,JOID_soc_netops_std
+cisco_acs,index,JOID_soc_netauth_std
+cisco_asa,index,JOID_soc_netfw_std
+Cisco_C100V Email Security Virtual Appliance_ESA_CONSOLIDATED_LOG_EVENT,index,JOID_soc_mail_std
+Cisco_C100V Email Security Virtual Appliance_ESA_CONSOLIDATED_LOG_EVENT,sc4s_template,t_legacy_hdr_msg
+Cisco_C100V Email Security Virtual Appliance_ESA_CONSOLIDATED_LOG_EVENT,source,esa:consolidated
+Cisco_C100V Email Security Virtual Appliance_ESA_CONSOLIDATED_LOG_EVENT,sourcetype,cisco:esa:cef
+cisco_cimc,index,JOID_soc_infraops_std
+cisco_esa,index,JOID_soc_mail_std
+cisco_firepower,index,JOID_soc_netids_std
+cisco_ftd,index,JOID_soc_netfw_std
+cisco_fwsm,index,JOID_soc_netfw_std
+cisco_ios,index,JOID_soc_netops_std
+cisco_ise,index,JOID_soc_netauth_std
+cisco_meraki,index,JOID_soc_netfw_std
+cisco_pix,index,JOID_soc_netfw_std
+cisco_tvcs,index,JOID_soc_test_30
+cisco_ucm,index,JOID_soc_test_30
+cisco_ucs,index,JOID_soc_infraops_std
+cisco_ucs_hx,index,JOID_soc_test_30
+cisco_wsa,index,JOID_soc_netproxy_std
+citrix_netscaler,index,JOID_soc_netfw_std
+Cyber-Ark_Vault,index,JOID_soc_netauth_std
+Cyber-Ark_Vault,sourcetype,cyberark:epv:cef
+CyberArk_PTA,index,JOID_soc_test_30
+CyberArk_PTA,sourcetype,cyberark:pta:cef
+dell_rsa_secureid,index,JOID_soc_netauth_std
+dell_emc_powerswitch_n,index,JOID_soc_netops_std
+dell_emc_powerswitch_n,sourcetype,dell:emc:powerswitch:n
+dell_sonicwall-firewall,index,JOID_soc_netfw_std
+dell_sonicwall-firewall,sourcetype,dell:sonicwall
+FireEye_CMS,index,JOID_soc_fireeye_std
+FireEye_CMS,sourcetype,fe_cef_syslog
+FireEye_eMPS,index,JOID_soc_fireeye_std
+FireEye_eMPS,sourcetype,fe_cef_syslog
+fireeye_hx,index,JOID_soc_fireeye_std
+fireeye_hx,sourcetype,hx_cef_syslog
+f5_bigip_access_json,index,JOID_soc_netops_std
+f5_bigip_asm,index,JOID_soc_netwaf_std
+f5_bigip_irule,index,JOID_soc_netops_std
+f5_bigip_nix,index,JOID_soc_netops_std
+f5_bigip,index,JOID_soc_netops_std
+forcepoint_webprotect,index,JOID_soc_netproxy_std
+fortinet_fortios_event,index,JOID_soc_netops_std
+fortinet_fortios_log,index,JOID_soc_netops_std
+fortinet_fortios_traffic,index,JOID_soc_netfw_std
+fortinet_fortios_utm,index,JOID_soc_netids_std
+fortinet_fortiweb_attack,index,JOID_soc_netids_std
+fortinet_fortiweb_event,index,JOID_soc_netops_std
+fortinet_fortiweb_log,index,JOID_soc_netops_std
+fortinet_fortiweb_traffic,index,JOID_soc_netfw_std
+Imperva Inc._SecureSphere_Firewall,sourcetype,imperva:waf:firewall:cef
+Imperva Inc._SecureSphere_Protocol,sourcetype,imperva:waf:security:cef
+Imperva Inc._SecureSphere_Signature,sourcetype,imperva:waf:security:cef
+Imperva Inc._SecureSphere_Worm,sourcetype,imperva:waf:security:cef
+Imperva Inc._SecureSphere,index,JOID_soc_netwaf_std
+Imperva Inc._SecureSphere,sc4s_template,t_legacy_hdr_msg
+Imperva Inc._SecureSphere,sourcetype,imperva:waf
+Incapsula_SIEMintegration,index,JOID_soc_netwaf_std
+Incapsula_SIEMintegration,sc4s_template,t_cef_kv
+Incapsula_SIEMintegration,source,Imperva:Incapsula
+Incapsula_SIEMintegration,sourcetype,cef
+infoblox_audit,index,JOID_soc_netops_std
+infoblox_fallback,index,JOID_soc_netops_std
+Infoblox_NIOS Threat,index,JOID_soc_netids_std
+Infoblox_NIOS Threat,sourcetype,infoblox:threatprotect
+Infoblox_NIOS,index,JOID_soc_netdns_std
+Infoblox_NIOS,sourcetype,infoblox:dns
+infoblox_dhcp,index,JOID_soc_netipam_std
+infoblox_dns,index,JOID_soc_netdns_std
+infoblox_threat,index,JOID_soc_netids_std
+juniper_idp_structured,index,JOID_soc_netids_std
+juniper_idp,index,JOID_soc_netids_std
+juniper_junos_aamw_structured,index,JOID_soc_netfw_std
+juniper_junos_fw_structured,index,JOID_soc_netfw_std
+juniper_junos_fw,index,JOID_soc_netfw_std
+juniper_junos_ids_structured,index,JOID_soc_netids_std
+juniper_junos_ids,index,JOID_soc_netids_std
+juniper_junos_secintel_structured,index,JOID_soc_netfw_std
+juniper_junos_utm_structured,index,JOID_soc_netfw_std
+juniper_junos_utm,index,JOID_soc_netfw_std
+juniper_legacy,index,JOID_soc_netops_std
+juniper_netscreen,index,JOID_soc_netfw_std
+juniper_structured,index,JOID_soc_netops_std
+local_example,index,JOID_soc_test_30
+mcafee_epo,index,JOID_soc_epav_std
+MCAS_SIEM_Agent,index,JOID_soc_test_30
+MCAS_SIEM_Agent,source,microsoft:cas
+Microsoft_Microsoft Windows,index,JOID_soc_oswinsec_std
+Microsoft_Microsoft Windows,source,CEFEventLog:Microsoft Windows
+Microsoft_System or Application Event,index,JOID_soc_oswin_std
+Microsoft_System or Application Event,source,CEFEventLog:System or Application Event
+nix_syslog,index,JOID_soc_osnix_std
+Palo Alto Networks_Traps Agent,index,JOID_soc_epintel_std
+Palo Alto Networks_Traps Agent,sourcetype,pan:traps4
+pan_config,index,JOID_soc_netops_std
+pan_correlation,index,JOID_soc_test_30
+pan_globalprotect,index,JOID_soc_netfw_std
+pan_hipmatch,index,JOID_soc_test_30
+pan_system,index,JOID_soc_netops_std
+pan_threat,index,JOID_soc_netproxy_std
+pan_traffic,index,JOID_soc_netfw_std
+pan_unknown,index,JOID_soc_netops_std
+pan_userid,index,JOID_soc_netauth_std
+pfsense_filterlog,index,JOID_soc_netfw_std
+pfsense,index,JOID_soc_netops_std
+proofpoint_pps_filter,index,JOID_soc_mail_std
+proofpoint_pps_sendmail,index,JOID_soc_mail_std
+pulse_connect_secure,index,JOID_soc_netfw_std
+pulse_connect_secure_web,index,JOID_soc_netproxy_std
+splunk_sc4s_events,index,JOID_soc_test_30
+splunk_sc4s_fallback,index,JOID_soc_test_30
+splunk_sc4s_metrics,index,JOID_soc_test_30
+schneider_apc,index,JOID_soc_test_30
+symantec_brightmail,index,JOID_soc_mail_std
+symantec_ep,index,JOID_soc_epav_std
+syslogng_loggen,index,JOID_soc_test_30
+Trend Micro_Deep Security Agent,index,JOID_soc_epintel_std
+Trend Micro_Deep Security Agent_antimalware,index,JOID_soc_epav_std
+Trend Micro_Deep Security Agent_antimalware,sourcetype,deepsecurity-antimalware
+Trend Micro_Deep Security Agent_app control,sourcetype,deepsecurity-app_control
+Trend Micro_Deep Security Agent_firewall,sourcetype,deepsecurity-firewall
+Trend Micro_Deep Security Agent_integrity monitoring,sourcetype,deepsecurity-integrity_monitoring
+Trend Micro_Deep Security Agent_intrusion prevention,sourcetype,deepsecurity-intrusion_prevention
+Trend Micro_Deep Security Agent_log inspection,sourcetype,deepsecurity-log_inspection
+Trend Micro_Deep Security Agent_web reputation,sourcetype,deepsecurity-web_reputation
+Trend Micro_Deep Security Agent,sc4s_template,t_legacy_hdr_msg
+Trend Micro_Deep Security Manager,index,JOID_soc_epintel_std
+Trend Micro_Deep Security Manager,sc4s_template,t_legacy_hdr_msg
+Trend Micro_Deep Security Manager,sourcetype,deepsecurity-system_events
+ubiquiti_unifi_fw,index,JOID_soc_netfw_std
+ubiquiti_unifi_link,index,JOID_soc_netops_std
+ubiquiti_unifi_sudo,index,JOID_soc_netops_std
+ubiquiti_unifi_switch,index,JOID_soc_netops_std
+ubiquiti_unifi_threat,index,JOID_soc_netids_std
+ubiquiti_unifi_wireless,index,JOID_soc_netops_std
+ubiquiti_unifi,index,JOID_soc_netops_std
+Vectra Networks_X Series,sourcetype,vectra:cognito:detect
+Vectra Networks_X Series_accountdetect,sourcetype,vectra:cognito:accountdetect
+Vectra Networks_X Series_asc,sourcetype,vectra:cognito:accountscoring
+Vectra Networks_X Series_audit,sourcetype,vectra:cognito:audit
+Vectra Networks_X Series_campaigns,sourcetype,vectra:cognito:campaigns
+Vectra Networks_X Series_health,sourcetype,vectra:cognito:health
+Vectra Networks_X Series_hsc,sourcetype,vectra:cognito:hostscoring
+Vectra Networks_X Series_lockdown,sourcetype,vectra:cognito:accountlockdown
+Varonis Inc._DatAdvantage,index,JOID_soc_test_30
+Varonis Inc._DatAdvantage,sourcetype,varonis:ta
+vmware_esx,index,JOID_soc_test_30
+vmware_horizon,index,JOID_soc_test_30
+vmware_nsx,index,JOID_soc_test_30
+vmware_vcenter,index,JOID_soc_test_30
+zscaler_alerts,index,JOID_soc_netops_std
+zscaler_dns,index,JOID_soc_netdns_std
+zscaler_fw,index,JOID_soc_netfw_std
+zscaler_lss,index,JOID_soc_netproxy_std
+zscaler_web,index,JOID_soc_netproxy_std
+zscaler_zia_audit,index,JOID_soc_netops_std
+zscaler_zia_sandbox,index,JOID_soc_test_30
+test_one,index,JOID_soc_netops_std
+test_one,sourcetype,sc4s:porttest
+ossec,index,JOID_soc_test_30
+mcafeewg,index,JOID_soc_test_30
+mcafee_nsp,index,JOID_soc_netids_std
+watchguard,index,JOID_soc_netfw_std
+watchguard,sourcetype,watchguard:firebox:syslog
